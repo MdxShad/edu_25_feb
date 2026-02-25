@@ -7,6 +7,11 @@ export type StaffPermission =
   | 'accountsView'
   | 'expenseAdd'
   | 'reportsView'
+  | 'leadsView'
+  | 'leadsManage'
+  | 'paymentsAdd'
+  | 'paymentsApprove'
+  | 'postersManage'
   | 'userManage';
 
 export const ALL_STAFF_PERMISSIONS: { key: StaffPermission; label: string; description: string }[] =
@@ -40,6 +45,31 @@ export const ALL_STAFF_PERMISSIONS: { key: StaffPermission; label: string; descr
       key: 'reportsView',
       label: 'Reports',
       description: 'Can view reports.',
+    },
+    {
+      key: 'leadsView',
+      label: 'Leads view',
+      description: 'Can view leads inbox.',
+    },
+    {
+      key: 'leadsManage',
+      label: 'Leads manage',
+      description: 'Can update lead status/assignment/notes.',
+    },
+    {
+      key: 'paymentsAdd',
+      label: 'Payments add',
+      description: 'Can add ledger and student payments.',
+    },
+    {
+      key: 'paymentsApprove',
+      label: 'Payments approve',
+      description: 'Can approve finalized payment workflows.',
+    },
+    {
+      key: 'postersManage',
+      label: 'Posters manage',
+      description: 'Can manage poster lifecycle.',
     },
     {
       key: 'userManage',

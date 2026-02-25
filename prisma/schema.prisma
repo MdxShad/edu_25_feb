@@ -66,28 +66,36 @@ enum DocumentKind {
   AGENT_PAYMENT_PROOF
 }
 
-model User {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  name         String
-  role         Role
-  parentId     String?
-  parent       User?    @relation("UserHierarchy", fields: [parentId], references: [id])
-  children     User[]   @relation("UserHierarchy")
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  LOST
+  WON
+}
 
-  email        String?
-  mobile       String?
-  address      String?
-  idProofUrl   String?
-  isActive     Boolean  @default(true)
+model User {
+  id       String  @id @default(cuid())
+  userId   String  @unique
+  name     String
+  role     Role
+  parentId String?
+  parent   User?   @relation("UserHierarchy", fields: [parentId], references: [id])
+  children User[]  @relation("UserHierarchy")
+
+  email      String?
+  mobile     String?
+  address    String?
+  idProofUrl String?
+  isActive   Boolean @default(true)
 
   passwordHash String
   permissions  Json?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  sessions     Session[]
+  sessions Session[]
 
   // Admissions
   admissionsCreated      Admission[] @relation("AdmissionsCreatedBy")
@@ -97,14 +105,17 @@ model User {
   agentCommissions AgentCommission[] @relation("AgentCommissionAgent")
   agentLedgers     AgentLedger[]
 
-  expensesCreated Expense[] @relation("ExpenseCreatedBy")
-  admissionChanges AdmissionChange[] @relation("AdmissionChangeActor")
+  expensesCreated    Expense[]           @relation("ExpenseCreatedBy")
+  admissionChanges   AdmissionChange[]   @relation("AdmissionChangeActor")
   admissionDocuments AdmissionDocument[] @relation("AdmissionDocumentUploader")
 
   universityPayments UniversityPayment[] @relation("UniversityPaymentCreatedBy")
-  agentPayouts AgentPayout[] @relation("AgentPayoutCreatedBy")
-  postersCreated Poster[] @relation("PosterCreatedBy")
-  auditLogs AuditLog[] @relation("AuditLogActor")
+  agentPayouts       AgentPayout[]       @relation("AgentPayoutCreatedBy")
+  postersCreated     Poster[]            @relation("PosterCreatedBy")
+  auditLogs          AuditLog[]          @relation("AuditLogActor")
+
+  studentPayments StudentPayment[] @relation("StudentPaymentCreatedBy")
+  assignedLeads   Lead[]           @relation("LeadAssignedTo")
 }
 
 model Session {
@@ -119,7 +130,7 @@ model Session {
 }
 
 model University {
-  id            String   @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   location      String?
   contactPerson String?
@@ -128,19 +139,19 @@ model University {
   address       String?
   notes         String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  courses       Course[]
-  admissions    Admission[]
+  courses           Course[]
+  admissions        Admission[]
   universityLedgers UniversityLedger[]
-  posters       Poster[]
+  posters           Poster[]
 }
 
 model Course {
-  id            String   @id @default(cuid())
-  universityId  String
-  university    University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  universityId String
+  university   University @relation(fields: [universityId], references: [id], onDelete: Cascade)
 
   name          String
   duration      String?
@@ -150,8 +161,8 @@ model Course {
   session       String?
   notes         String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   agentCommissions AgentCommission[]
   admissions       Admission[]
@@ -161,18 +172,18 @@ model Course {
 }
 
 model AgentCommission {
-  id        String         @id @default(cuid())
-  agentId   String
-  agent     User           @relation("AgentCommissionAgent", fields: [agentId], references: [id], onDelete: Cascade)
-  courseId  String
-  course    Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  agentId  String
+  agent    User   @relation("AgentCommissionAgent", fields: [agentId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
-  type      CommissionType
-  value     Int
-  isActive  Boolean        @default(true)
+  type     CommissionType
+  value    Int
+  isActive Boolean        @default(true)
 
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([agentId, courseId])
   @@index([courseId])
@@ -189,67 +200,78 @@ model Lead {
   pageUrl   String?
   ipHash    String?
   userAgent String?
+
+  status        LeadStatus @default(NEW)
+  assignedToId  String?
+  assignedTo    User?      @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  handledAt     DateTime?
+  internalNotes String?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([createdAt])
   @@index([email])
+  @@index([status, createdAt])
+  @@index([assignedToId, createdAt])
 }
 
 model Admission {
-  id             String         @id @default(cuid())
+  id String @id @default(cuid())
 
-  createdById    String
-  createdBy      User           @relation("AdmissionsCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("AdmissionsCreatedBy", fields: [createdById], references: [id])
 
-  consultantId   String
-  consultant     User           @relation("AdmissionsConsultant", fields: [consultantId], references: [id])
+  consultantId String
+  consultant   User   @relation("AdmissionsConsultant", fields: [consultantId], references: [id])
 
-  agentId        String?
-  agent          User?          @relation("AdmissionsAgent", fields: [agentId], references: [id])
+  agentId String?
+  agent   User?   @relation("AdmissionsAgent", fields: [agentId], references: [id])
 
-  status         AdmissionStatus @default(SUBMITTED)
-  submittedAt    DateTime?
+  status      AdmissionStatus @default(SUBMITTED)
+  submittedAt DateTime?
 
-  studentName    String
-  fatherName     String?
-  mobile         String
-  altMobile      String?
-  address        String?
-  dob            DateTime?
-  gender         String?
+  studentName String
+  fatherName  String?
+  mobile      String
+  altMobile   String?
+  address     String?
+  dob         DateTime?
+  gender      String?
 
-  photoUrl       String?
-  documents      Json?
+  photoUrl  String?
+  documents Json?
 
-  universityId   String
-  university     University     @relation(fields: [universityId], references: [id])
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
 
-  courseId       String
-  course         Course         @relation(fields: [courseId], references: [id])
+  courseId         String
+  course           Course  @relation(fields: [courseId], references: [id])
   admissionSession String?
 
   amountReceived Int
   source         AdmissionSource
 
   // Snapshot fees
-  universityFee           Int
-  displayFee              Int
-  consultancyProfit       Int
+  universityFee     Int
+  displayFee        Int
+  consultancyProfit Int
 
-  agentCommissionType     CommissionType?
-  agentCommissionValue    Int?
-  agentCommissionAmount   Int
+  agentCommissionType   CommissionType?
+  agentCommissionValue  Int?
+  agentCommissionAmount Int
 
-  agentExpensesTotal      Int @default(0)
+  agentExpensesTotal       Int @default(0)
   consultancyExpensesTotal Int @default(0)
-  netProfit               Int @default(0)
+  netProfit                Int @default(0)
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  expenses        Expense[]
-  documentsRows   AdmissionDocument[]
+  expenses      Expense[]
+  documentsRows AdmissionDocument[]
   changes         AdmissionChange[]
+  studentPayments  StudentPayment[]
 
   universityLedger UniversityLedger?
   agentLedger      AgentLedger?
@@ -263,23 +285,23 @@ model Admission {
 }
 
 model Expense {
-  id          String      @id @default(cuid())
-  type        ExpenseType
+  id   String      @id @default(cuid())
+  type ExpenseType
 
-  category    ExpenseCategory?
-  title       String
-  amount      Int
-  proofUrl    String?
-  date        DateTime    @default(now())
+  category ExpenseCategory?
+  title    String
+  amount   Int
+  proofUrl String?
+  date     DateTime         @default(now())
 
   admissionId String?
-  admission   Admission?  @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  admission   Admission? @relation(fields: [admissionId], references: [id], onDelete: Cascade)
 
   createdById String?
-  createdBy   User?       @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdBy   User?              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
   documentRow AdmissionDocument?
 
-  createdAt   DateTime    @default(now())
+  createdAt DateTime @default(now())
 
   @@index([type])
   @@index([date])
@@ -287,154 +309,180 @@ model Expense {
 }
 
 model AdmissionDocument {
-  id            String       @id @default(cuid())
-  admissionId   String?
-  admission     Admission?   @relation(fields: [admissionId], references: [id], onDelete: Cascade)
-  expenseId     String?      @unique
-  expense       Expense?     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(cuid())
+  admissionId         String?
+  admission           Admission?         @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  expenseId           String?            @unique
+  expense             Expense?           @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  universityPaymentId String?            @unique
+  universityPayment   UniversityPayment? @relation(fields: [universityPaymentId], references: [id], onDelete: Cascade)
+  agentPayoutId       String?            @unique
+  agentPayout         AgentPayout?       @relation(fields: [agentPayoutId], references: [id], onDelete: Cascade)
 
-  kind          DocumentKind
-  label         String?
-  fileName      String?
-  mimeType      String?
-  sizeBytes     Int?
-  url           String
+  kind      DocumentKind
+  label     String?
+  fileName  String?
+  mimeType  String?
+  sizeBytes Int?
+  url       String
 
-  uploadedById  String?
-  uploadedBy    User?        @relation("AdmissionDocumentUploader", fields: [uploadedById], references: [id])
+  uploadedById String?
+  uploadedBy   User?   @relation("AdmissionDocumentUploader", fields: [uploadedById], references: [id])
 
-  createdAt     DateTime     @default(now())
+  createdAt DateTime @default(now())
 
   @@index([admissionId])
   @@index([kind])
 }
 
+
+model StudentPayment {
+  id          String    @id @default(cuid())
+  admissionId String
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  amount    Int
+  paidAt    DateTime
+  method    PaymentMethod
+  reference String?
+  proofUrl  String?
+  notes     String?
+
+  createdById String?
+  createdBy   User?    @relation("StudentPaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([admissionId, paidAt])
+}
+
 model AdmissionChange {
-  id           String   @id @default(cuid())
-  admissionId  String
-  admission    Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  admissionId String
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
 
-  actorId      String?
-  actor        User?     @relation("AdmissionChangeActor", fields: [actorId], references: [id])
+  actorId String?
+  actor   User?   @relation("AdmissionChangeActor", fields: [actorId], references: [id])
 
-  action       String
-  details      Json?
-  createdAt    DateTime @default(now())
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
 
   @@index([admissionId, createdAt])
 }
 
 model UniversityLedger {
-  id           String        @id @default(cuid())
-  admissionId  String        @unique
-  admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  admissionId String    @unique
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
 
   universityId String
-  university   University    @relation(fields: [universityId], references: [id])
+  university   University @relation(fields: [universityId], references: [id])
 
   amountPayable Int
-  amountPaid    Int          @default(0)
+  amountPaid    Int           @default(0)
   status        PaymentStatus @default(PENDING)
 
-  payments      UniversityPayment[]
+  payments UniversityPayment[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([universityId])
   @@index([status])
 }
 
 model AgentLedger {
-  id           String        @id @default(cuid())
-  admissionId  String        @unique
-  admission    Admission     @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  admissionId String    @unique
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
 
-  agentId      String
-  agent        User          @relation(fields: [agentId], references: [id])
+  agentId String
+  agent   User   @relation(fields: [agentId], references: [id])
 
   commissionAmount Int
-  amountPaid       Int          @default(0)
+  amountPaid       Int           @default(0)
   status           PaymentStatus @default(PENDING)
 
-  payouts          AgentPayout[]
+  payouts AgentPayout[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([agentId])
   @@index([status])
 }
 
 model ProfitLedger {
-  id           String    @id @default(cuid())
-  admissionId  String    @unique
-  admission    Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  admissionId String    @unique
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
 
-  grossProfit        Int
-  agentCommission    Int
-  agentExpenses      Int
+  grossProfit         Int
+  agentCommission     Int
+  agentExpenses       Int
   consultancyExpenses Int
-  netProfit          Int
+  netProfit           Int
 
   createdAt DateTime @default(now())
 }
 
 model UniversityPayment {
-  id           String        @id @default(cuid())
-  ledgerId     String
-  ledger       UniversityLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  id       String           @id @default(cuid())
+  ledgerId String
+  ledger   UniversityLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
 
-  amount       Int
-  paidAt       DateTime
-  method       PaymentMethod
-  reference    String?
-  proofUrl     String?
-  notes        String?
+  amount    Int
+  paidAt    DateTime
+  method    PaymentMethod
+  reference String?
+  proofUrl  String?
+  notes     String?
 
-  createdById  String?
-  createdBy    User?         @relation("UniversityPaymentCreatedBy", fields: [createdById], references: [id])
-  createdAt    DateTime      @default(now())
+  createdById   String?
+  createdBy     User?              @relation("UniversityPaymentCreatedBy", fields: [createdById], references: [id])
+  proofDocument AdmissionDocument?
+  createdAt     DateTime           @default(now())
 
   @@index([ledgerId, paidAt])
 }
 
 model AgentPayout {
-  id           String       @id @default(cuid())
-  ledgerId     String
-  ledger       AgentLedger  @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  id       String      @id @default(cuid())
+  ledgerId String
+  ledger   AgentLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
 
-  amount       Int
-  paidAt       DateTime
-  method       PaymentMethod
-  reference    String?
-  proofUrl     String?
-  notes        String?
+  amount    Int
+  paidAt    DateTime
+  method    PaymentMethod
+  reference String?
+  proofUrl  String?
+  notes     String?
 
-  createdById  String?
-  createdBy    User?        @relation("AgentPayoutCreatedBy", fields: [createdById], references: [id])
-  createdAt    DateTime     @default(now())
+  createdById   String?
+  createdBy     User?              @relation("AgentPayoutCreatedBy", fields: [createdById], references: [id])
+  proofDocument AdmissionDocument?
+  createdAt     DateTime           @default(now())
 
   @@index([ledgerId, paidAt])
 }
 
 model Poster {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   title        String
   imageUrl     String
-  qrTargetPath String   @default("/contact")
+  qrTargetPath String  @default("/contact")
   tags         Json?
-  isActive     Boolean  @default(true)
+  isActive     Boolean @default(true)
 
   universityId String?
   university   University? @relation(fields: [universityId], references: [id], onDelete: SetNull)
   courseId     String?
-  course       Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course       Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
-  createdById  String?
-  createdBy    User?    @relation("PosterCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("PosterCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([isActive, createdAt])
   @@index([universityId])
@@ -442,19 +490,19 @@ model Poster {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  actorId    String?
-  actor      User?    @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  id      String  @id @default(cuid())
+  actorId String?
+  actor   User?   @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   action     String
   entityType String?
   entityId   String?
-  success    Boolean  @default(true)
+  success    Boolean @default(true)
   metadata   Json?
 
-  ipHash     String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   @@index([action, createdAt])
   @@index([entityType, entityId, createdAt])

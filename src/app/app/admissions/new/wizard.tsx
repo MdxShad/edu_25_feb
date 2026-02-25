@@ -40,6 +40,7 @@ type ExpenseRow = { title: string; amount: number; proofFile?: UploadedFile };
 type AgentSearchItem = { id: string; userId: string; name: string; parentId: string | null };
 
 const STEPS = ['Student', 'Course', 'Fee', 'Source', 'Expenses', 'Summary', 'Submit'] as const;
+const phoneRegex = /^\+?[0-9][0-9\s-]{7,14}$/;
 
 function StepPill(props: { active: boolean; done: boolean; label: string }) {
   return (
@@ -90,6 +91,7 @@ export function AdmissionWizard(props: {
   const [agentSearchResults, setAgentSearchResults] = React.useState<AgentSearchItem[]>([]);
   const [agentSearchPending, setAgentSearchPending] = React.useState(false);
   const [selectedAgentLabel, setSelectedAgentLabel] = React.useState('');
+  const [duplicateHint, setDuplicateHint] = React.useState<string | null>(null);
   const [agentExpenses, setAgentExpenses] = React.useState<ExpenseRow[]>([]);
   const [consultancyExpenses, setConsultancyExpenses] = React.useState<ExpenseRow[]>([]);
 
@@ -173,6 +175,38 @@ export function AdmissionWizard(props: {
     };
   }, [source, agentCode, consultantId, props.me.role]);
 
+  React.useEffect(() => {
+    const q = mobile.trim();
+    if (q.length < 8) {
+      setDuplicateHint(null);
+      return;
+    }
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/admissions/duplicates?mobile=${encodeURIComponent(q)}`, {
+          cache: 'no-store',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: Array<{ studentName: string; createdAt: string }> };
+        if (cancelled) return;
+        const first = payload.items?.[0];
+        setDuplicateHint(
+          first
+            ? `Possible duplicate found: ${first.studentName} (${new Date(first.createdAt).toLocaleDateString()})`
+            : null
+        );
+      } catch {
+        if (!cancelled) setDuplicateHint(null);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [mobile]);
+
   const commissionConfig = React.useMemo(() => {
     if (source !== AdmissionSource.AGENT || !agentId || !selectedCourse)
       return { type: 'NONE' as const };
@@ -240,13 +274,18 @@ export function AdmissionWizard(props: {
     if (props.me.role === Role.SUPER_ADMIN && !consultantId) return 'Select consultant';
     if (currentStep === 1) {
       if (studentName.trim().length < 2) return 'Student name is required';
-      if (mobile.trim().length < 5) return 'Mobile is required';
+      if (!phoneRegex.test(mobile.trim())) return 'Enter a valid mobile number';
     }
     if (currentStep === 2) {
       if (!universityId || !courseId) return 'University and course are required';
       if (admissionSession.trim().length < 3) return 'Admission session is required';
     }
-    if (currentStep === 3 && amountReceived < 0) return 'Amount cannot be negative';
+    if (currentStep === 3) {
+      if (amountReceived < 0) return 'Amount cannot be negative';
+      if (selectedCourse && amountReceived > selectedCourse.displayFee && props.me.role !== Role.SUPER_ADMIN) {
+        return 'Amount received cannot exceed display fee';
+      }
+    }
     if (currentStep === 4 && source === AdmissionSource.AGENT && !agentId)
       return 'Select a valid agent';
     return null;
@@ -382,6 +421,7 @@ export function AdmissionWizard(props: {
                 <div className="space-y-1">
                   <Label>Mobile</Label>
                   <Input value={mobile} onChange={(e) => setMobile(e.target.value)} />
+                  {duplicateHint ? <div className="text-xs text-amber-700">{duplicateHint}</div> : null}
                 </div>
                 <div className="space-y-1">
                   <Label>Alt Mobile</Label>
@@ -507,6 +547,7 @@ export function AdmissionWizard(props: {
                     type="number"
                     min={0}
                     step={1}
+                    max={props.me.role === Role.SUPER_ADMIN ? undefined : (selectedCourse?.displayFee ?? undefined)}
                     value={amountReceived}
                     onChange={(e) => setAmountReceived(Number(e.target.value))}
                   />
@@ -515,6 +556,12 @@ export function AdmissionWizard(props: {
                   <Label>Auto consultancy profit</Label>
                   <Input readOnly value={formatINR(financials.consultancyProfit)} />
                 </div>
+                {selectedCourse ? (
+                  <div className="text-xs text-zinc-600 md:col-span-2">
+                    Display fee cap: <span className="font-medium">{formatINR(selectedCourse.displayFee)}</span>
+                    {props.me.role === Role.SUPER_ADMIN ? ' (Super Admin can override).' : ''}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

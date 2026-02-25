@@ -10,9 +10,11 @@ import { Role } from '@prisma/client';
 import { checkRateLimit } from './rate-limit';
 import { getClientIpFromForwarded, hashValue } from './security';
 import { logAuditEvent } from './audit';
+import { ensureEnv } from './env';
 
-const COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'educonnect_session';
-const TTL_DAYS = Number.parseInt(process.env.SESSION_TTL_DAYS || '14', 10);
+const env = ensureEnv();
+const COOKIE_NAME = env.SESSION_COOKIE_NAME;
+const TTL_DAYS = env.SESSION_TTL_DAYS;
 
 export type AuthUser = {
   id: string;
@@ -184,6 +186,10 @@ export async function signInAction(formData: FormData): Promise<{ ok: boolean; e
     });
     return { ok: false, error: 'Invalid credentials.' };
   }
+
+  await prisma.session.deleteMany({
+    where: { expiresAt: { lt: new Date() } },
+  });
 
   await createSession(user.id);
   await logAuditEvent({

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { formatINR } from '@/lib/money';
 import { Button } from '@/components/ui/button';
-import { deleteAdmissionAction, updateAdmissionContactAction } from '../actions';
+import { collectStudentPaymentAction, deleteAdmissionAction, updateAdmissionContactAction } from '../actions';
 
 function canViewAdmission(
   user: { id: string; role: Role; parentId: string | null },
@@ -45,6 +45,7 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
       universityLedger: true,
       agentLedger: true,
       profitLedger: true,
+      studentPayments: { orderBy: { paidAt: 'desc' } },
     },
   });
   const auditLogs = await prisma.auditLog.findMany({
@@ -73,6 +74,8 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
       admission.consultantId === (user.parentId ?? '__NONE__') &&
       canAccess(user, 'admissionEdit'));
   const canDelete = user.role === Role.SUPER_ADMIN;
+  const collectedAmount = admission.studentPayments.reduce((sum, row) => sum + row.amount, 0);
+  const pendingFee = Math.max(0, admission.displayFee - collectedAmount);
 
   return (
     <div className="space-y-6">
@@ -94,8 +97,11 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
           <a href={`/api/admissions/${admission.id}/slip`} target="_blank" rel="noreferrer">
             <Button>Admission Slip (PDF)</Button>
           </a>
+          <a href={`/api/admissions/${admission.id}/slip`} target="_blank" rel="noreferrer">
+            <Button variant="secondary">Print Slip</Button>
+          </a>
           <a href={`/api/admissions/${admission.id}/fee-receipt`} target="_blank" rel="noreferrer">
-            <Button variant="secondary">Fee Receipt (PDF)</Button>
+            <Button variant="secondary">Fee Receipt (PDF) • Pending {formatINR(pendingFee)}</Button>
           </a>
           {canDelete ? (
             <form action={deleteAdmissionAction.bind(null, admission.id)}>
@@ -106,6 +112,18 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
           ) : null}
         </div>
       </div>
+
+      <Card className="border-amber-300 bg-amber-50">
+        <CardContent className="flex items-center justify-between p-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Pending Fee</div>
+            <div className="text-2xl font-bold text-amber-900">{formatINR(pendingFee)}</div>
+          </div>
+          <a href={`/api/admissions/${admission.id}/fee-receipt`} target="_blank" rel="noreferrer">
+            <Button size="sm" variant="secondary">Download Fee Receipt</Button>
+          </a>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -220,7 +238,15 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Total received</span>
-              <span className="font-medium">{formatINR(admission.amountReceived)}</span>
+              <span className="font-medium">{formatINR(collectedAmount)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Display fee</span>
+              <span className="font-medium">{formatINR(admission.displayFee)}</span>
+            </div>
+            <div className="flex justify-between rounded bg-amber-100 px-2 py-1 text-amber-900">
+              <span className="font-semibold">Pending fee</span>
+              <span className="font-semibold">{formatINR(pendingFee)}</span>
             </div>
             <div className="flex justify-between">
               <span>University payable</span>
@@ -300,6 +326,55 @@ export default async function AdmissionDetailPage({ params }: { params: { id: st
           </CardContent>
         </Card>
       </div>
+
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Installment / Fee Collection</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="text-sm text-zinc-700">
+            Collected: <span className="font-semibold">{formatINR(collectedAmount)}</span> • Pending:{' '}
+            <span className="font-semibold">{formatINR(pendingFee)}</span>
+          </div>
+          {user.role !== Role.AGENT ? (
+            <form
+              action={collectStudentPaymentAction.bind(null, admission.id)}
+              className="grid gap-2 rounded border border-zinc-200 p-3 md:grid-cols-6"
+            >
+              <input name="amount" type="number" min={1} step={1} className="h-9 rounded border border-zinc-300 px-2" placeholder="Amount" />
+              <input name="paidAt" type="date" className="h-9 rounded border border-zinc-300 px-2" />
+              <select name="method" className="h-9 rounded border border-zinc-300 bg-white px-2 text-sm">
+                <option value="CASH">Cash</option>
+                <option value="BANK_TRANSFER">Bank</option>
+                <option value="UPI">UPI</option>
+                <option value="CARD">Card</option>
+                <option value="CHEQUE">Cheque</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <input name="reference" className="h-9 rounded border border-zinc-300 px-2" placeholder="Reference" />
+              <input name="proofUrl" className="h-9 rounded border border-zinc-300 px-2" placeholder="Proof URL" />
+              <button type="submit" className="h-9 rounded bg-zinc-900 px-3 text-sm text-white">Collect</button>
+            </form>
+          ) : null}
+          <div className="space-y-2">
+            {admission.studentPayments.map((payment) => (
+              <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-200 p-2 text-sm">
+                <div>
+                  <div className="font-medium">{formatINR(payment.amount)} • {payment.method.replaceAll('_', ' ')}</div>
+                  <div className="text-xs text-zinc-500">{new Date(payment.paidAt).toLocaleString()} • {payment.reference || '-'}</div>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <a className="underline" href={`/api/admissions/payments/${payment.id}/receipt`} target="_blank" rel="noreferrer">Receipt</a>
+                  {payment.proofUrl ? (
+                    <a className="underline" href={payment.proofUrl} target="_blank" rel="noreferrer">Proof</a>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

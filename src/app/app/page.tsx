@@ -58,6 +58,9 @@ async function getDashboardData(user: { id: string; role: Role; parentId: string
       chartAdmissions,
       chartDailyExpenses,
       chartAdmissionExpenses,
+      agedUniversityPayments,
+      agedAgentPayouts,
+      todaysNewLeads,
     ] = await Promise.all([
       prisma.admission.count({ where: admissionWhere }),
       prisma.profitLedger.aggregate({
@@ -115,6 +118,23 @@ async function getDashboardData(user: { id: string; role: Role; parentId: string
         select: { date: true, amount: true },
         orderBy: { date: 'asc' },
       }),
+      prisma.universityLedger.count({
+        where: {
+          status: PaymentStatus.PENDING,
+          admission: admissionWhere,
+          updatedAt: { lte: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.agentLedger.count({
+        where: {
+          status: PaymentStatus.PENDING,
+          admission: admissionWhere,
+          updatedAt: { lte: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.lead.count({
+        where: { createdAt: { gte: monthStart, lte: monthEnd }, status: 'NEW' as any },
+      }),
     ]);
 
     const totalProfit = totalProfitAgg._sum.netProfit ?? 0;
@@ -146,6 +166,9 @@ async function getDashboardData(user: { id: string; role: Role; parentId: string
       monthlyIncome,
       monthlyExpenses,
       chartRows,
+      agedUniversityPayments,
+      agedAgentPayouts,
+      todaysNewLeads,
     };
   });
 }
@@ -181,6 +204,25 @@ export default async function DashboardPage() {
           label="Monthly expenses"
           value={formatINR(data.monthlyExpenses)}
           hint="Daily + admission expenses"
+        />
+      </div>
+
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard
+          label="University payments aging (15d+)"
+          value={String(data.agedUniversityPayments)}
+          hint="Pending university settlements requiring follow-up"
+        />
+        <StatCard
+          label="Agent payouts aging (15d+)"
+          value={String(data.agedAgentPayouts)}
+          hint="Pending payouts older than 15 days"
+        />
+        <StatCard
+          label="New leads this month"
+          value={String(data.todaysNewLeads)}
+          hint="Follow-up attention card"
         />
       </div>
 

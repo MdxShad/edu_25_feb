@@ -53,6 +53,11 @@ type StaffPermission =
   | 'accountsView'
   | 'expenseAdd'
   | 'reportsView'
+  | 'leadsView'
+  | 'leadsManage'
+  | 'paymentsAdd'
+  | 'paymentsApprove'
+  | 'postersManage'
   | 'userManage';
 
 export type AppShellUser = {
@@ -150,6 +155,15 @@ const NAV_ITEMS: NavItem[] = [
       canAccess(u, 'reportsView'),
   },
   {
+    href: '/app/leads',
+    label: 'Leads Inbox',
+    icon: UserCircle2,
+    show: (u) =>
+      u.role === 'SUPER_ADMIN' ||
+      u.role === 'CONSULTANT' ||
+      (u.role === 'STAFF' && canAccess(u, 'leadsView')),
+  },
+  {
     href: '/app/posters',
     label: 'Posters',
     icon: ImageIcon,
@@ -157,7 +171,7 @@ const NAV_ITEMS: NavItem[] = [
       u.role === 'SUPER_ADMIN' ||
       u.role === 'CONSULTANT' ||
       u.role === 'AGENT' ||
-      canAccess(u, 'reportsView'),
+      canAccess(u, 'postersManage'),
   },
   {
     href: '/app/ai',

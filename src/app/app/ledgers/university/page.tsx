@@ -11,7 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { formatINR } from '@/lib/money';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ProofUploadField } from '@/components/uploads/proof-upload-field';
 import { addUniversityPaymentAction } from '../actions';
+import { PaymentHistoryModal } from '../payment-history-modal';
 
 function scopeAdmissionWhere(user: { id: string; role: Role; parentId: string | null }) {
   if (user.role === Role.SUPER_ADMIN) return {};
@@ -40,6 +42,12 @@ export default async function UniversityLedgerPage({
     );
   }
 
+
+  const canEdit =
+    user.role === Role.SUPER_ADMIN ||
+    user.role === Role.CONSULTANT ||
+    (user.role === Role.STAFF && canAccess(user, 'paymentsAdd'));
+
   const period = parsePeriodFilter(searchParams);
   const statusFilter =
     searchParams.status === 'PAID' || searchParams.status === 'PENDING'
@@ -54,7 +62,7 @@ export default async function UniversityLedgerPage({
     },
     include: {
       university: true,
-      payments: { orderBy: { paidAt: 'desc' }, take: 3 },
+      payments: { orderBy: { paidAt: 'desc' } },
       admission: { include: { course: true } },
     },
     orderBy: { updatedAt: 'desc' },
@@ -172,11 +180,12 @@ export default async function UniversityLedgerPage({
                         )}
                       </TD>
                       <TD className="text-right">
-                        <form
-                          id={formId}
-                          action={addUniversityPaymentAction.bind(null, ledger.id)}
-                          className="grid gap-1 md:grid-cols-5"
-                        >
+                        {canEdit ? (
+                          <form
+                            id={formId}
+                            action={addUniversityPaymentAction.bind(null, ledger.id)}
+                            className="grid gap-1 md:grid-cols-5"
+                          >
                           <Input
                             name="amount"
                             type="number"
@@ -199,15 +208,25 @@ export default async function UniversityLedgerPage({
                             <option value="OTHER">Other</option>
                           </select>
                           <Input name="reference" placeholder="Reference" className="h-8" />
-                          <Input name="proofUrl" placeholder="Proof URL" className="h-8" />
+                          <ProofUploadField
+                            id={`${formId}-proof`}
+                            inputName="proofUrl"
+                            label="Proof"
+                            helpText="Upload receipt or screenshot"
+                            className="md:col-span-5"
+                          />
                           <Input name="notes" placeholder="Notes" className="h-8 md:col-span-4" />
                           <Button type="submit" size="sm" variant="secondary" className="h-8">
                             Add
                           </Button>
-                        </form>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-zinc-500">View only</span>
+                        )}
                         {ledger.payments.length > 0 ? (
-                          <div className="mt-1 text-xs text-zinc-500">
-                            Latest: {ledger.payments[0].amount} on{' '}
+                          <>
+                            <div className="mt-1 text-xs text-zinc-500">
+                            Latest: {formatINR(ledger.payments[0].amount)} on{' '}
                             {new Date(ledger.payments[0].paidAt).toLocaleDateString()}{' '}
                             <a
                               className="underline"
@@ -217,7 +236,35 @@ export default async function UniversityLedgerPage({
                             >
                               PDF
                             </a>
+                            {ledger.payments[0].proofUrl ? (
+                              <>
+                                {' '}•{' '}
+                                <a
+                                  className="underline"
+                                  href={ledger.payments[0].proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Proof
+                                </a>
+                              </>
+                            ) : null}
                           </div>
+                          <PaymentHistoryModal
+                            title={`University payments • ${ledger.university.name}`}
+                            description={`All payment entries for ${ledger.admission.studentName}`}
+                            entries={ledger.payments.map((payment) => ({
+                              id: payment.id,
+                              amount: payment.amount,
+                              paidAtIso: payment.paidAt.toISOString(),
+                              method: payment.method,
+                              reference: payment.reference,
+                              notes: payment.notes,
+                              proofUrl: payment.proofUrl,
+                              slipUrl: `/api/ledgers/university/${payment.id}/slip`,
+                            }))}
+                          />
+                          </>
                         ) : null}
                       </TD>
                     </TR>

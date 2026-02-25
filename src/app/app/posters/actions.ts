@@ -69,6 +69,12 @@ export async function setPosterStatusAction(payload: unknown): Promise<void> {
   if (!parsed.success) throw new Error('Invalid poster status payload');
   const data = parsed.data;
 
+  const previous = await prisma.poster.findUnique({
+    where: { id: data.posterId },
+    select: { id: true, isActive: true, title: true },
+  });
+  if (!previous) throw new Error('Poster not found.');
+
   const poster = await prisma.poster.update({
     where: { id: data.posterId },
     data: { isActive: data.isActive },
@@ -77,10 +83,10 @@ export async function setPosterStatusAction(payload: unknown): Promise<void> {
 
   await logAuditEvent({
     actorId: user.id,
-    action: 'POSTER_STATUS_UPDATED',
+    action: poster.isActive ? 'POSTER_UPDATED' : 'POSTER_DEACTIVATED',
     entityType: 'Poster',
     entityId: poster.id,
-    metadata: { isActive: poster.isActive, title: poster.title },
+    metadata: { beforeActive: previous.isActive, afterActive: poster.isActive, title: poster.title },
   });
 
   revalidatePath('/app/posters');
@@ -114,6 +120,6 @@ export async function canViewPostersAction(): Promise<boolean> {
     user.role === Role.SUPER_ADMIN ||
     user.role === Role.CONSULTANT ||
     user.role === Role.AGENT ||
-    (user.role === Role.STAFF && canAccess(user, 'reportsView'))
+    (user.role === Role.STAFF && canAccess(user, 'postersManage'))
   );
 }
