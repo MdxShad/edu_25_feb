@@ -8,11 +8,12 @@ import { canAccess } from '@/lib/roles';
 import { ledgerPaymentSchema } from '@/lib/validation';
 import { logAuditEvent } from '@/lib/audit';
 import { invalidateFinancialCaches } from '@/lib/cache-invalidation';
+import { assertOpenPeriod } from '@/lib/month-close';
 
 function ensureCanEdit(user: { role: Role; parentId: string | null }) {
   if (user.role === Role.SUPER_ADMIN) return;
   if (user.role === Role.CONSULTANT) return;
-  if (user.role === Role.STAFF && canAccess(user as any, 'accountsView')) return;
+  if (user.role === Role.STAFF && canAccess(user as any, 'paymentsAdd')) return;
   throw new Error('Not allowed');
 }
 
@@ -26,12 +27,16 @@ export async function addUniversityPaymentAction(ledgerId: string, formData: For
     method: formData.get('method'),
     reference: formData.get('reference'),
     proofUrl: formData.get('proofUrl'),
+    proofFileName: formData.get('proofFileName'),
+    proofMimeType: formData.get('proofMimeType'),
+    proofSizeBytes: formData.get('proofSizeBytes'),
     notes: formData.get('notes'),
   });
   if (!parsed.success) throw new Error('Invalid payment payload');
   const data = parsed.data;
   const amount = Math.trunc(data.amount);
   const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
+  await assertOpenPeriod(paidAt, user.role === Role.SUPER_ADMIN);
 
   const ledger = await prisma.universityLedger.findUnique({
     where: { id: ledgerId },
@@ -52,7 +57,7 @@ export async function addUniversityPaymentAction(ledgerId: string, formData: For
   const status = newPaid >= ledger.amountPayable ? PaymentStatus.PAID : PaymentStatus.PENDING;
 
   await prisma.$transaction(async (tx) => {
-    await tx.universityPayment.create({
+    const payment = await tx.universityPayment.create({
       data: {
         ledgerId,
         amount,
@@ -74,9 +79,13 @@ export async function addUniversityPaymentAction(ledgerId: string, formData: For
       await tx.admissionDocument.create({
         data: {
           admissionId: ledger.admissionId,
+          universityPaymentId: payment.id,
           kind: DocumentKind.UNIVERSITY_PAYMENT_PROOF,
           label: `University payment proof (${ledger.university.name})`,
           url: data.proofUrl,
+          fileName: data.proofFileName || null,
+          mimeType: data.proofMimeType || null,
+          sizeBytes: data.proofSizeBytes ?? null,
           uploadedById: user.id,
         },
       });
@@ -121,12 +130,16 @@ export async function addAgentPaymentAction(ledgerId: string, formData: FormData
     method: formData.get('method'),
     reference: formData.get('reference'),
     proofUrl: formData.get('proofUrl'),
+    proofFileName: formData.get('proofFileName'),
+    proofMimeType: formData.get('proofMimeType'),
+    proofSizeBytes: formData.get('proofSizeBytes'),
     notes: formData.get('notes'),
   });
   if (!parsed.success) throw new Error('Invalid payment payload');
   const data = parsed.data;
   const amount = Math.trunc(data.amount);
   const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
+  await assertOpenPeriod(paidAt, user.role === Role.SUPER_ADMIN);
 
   const ledger = await prisma.agentLedger.findUnique({
     where: { id: ledgerId },
@@ -147,7 +160,7 @@ export async function addAgentPaymentAction(ledgerId: string, formData: FormData
   const status = newPaid >= ledger.commissionAmount ? PaymentStatus.PAID : PaymentStatus.PENDING;
 
   await prisma.$transaction(async (tx) => {
-    await tx.agentPayout.create({
+    const payout = await tx.agentPayout.create({
       data: {
         ledgerId,
         amount,
@@ -169,9 +182,13 @@ export async function addAgentPaymentAction(ledgerId: string, formData: FormData
       await tx.admissionDocument.create({
         data: {
           admissionId: ledger.admissionId,
+          agentPayoutId: payout.id,
           kind: DocumentKind.AGENT_PAYMENT_PROOF,
           label: `Agent payout proof (${ledger.agent.name})`,
           url: data.proofUrl,
+          fileName: data.proofFileName || null,
+          mimeType: data.proofMimeType || null,
+          sizeBytes: data.proofSizeBytes ?? null,
           uploadedById: user.id,
         },
       });

@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { getBrandSettings } from '@/lib/branding';
 
 export type PdfTheme = {
   margin: number;
@@ -13,12 +14,57 @@ export type PdfContext = {
   font: any;
   fontBold: any;
   theme: PdfTheme;
+  branding: {
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+    logoUrl: string;
+  };
+  logoImage: any | null;
 };
+
+function detectImageType(buffer: Uint8Array): 'png' | 'jpg' | null {
+  if (buffer.length >= 8) {
+    const isPng =
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a;
+    if (isPng) return 'png';
+  }
+  if (buffer.length >= 3) {
+    const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    if (isJpeg) return 'jpg';
+  }
+  return null;
+}
+
+async function tryEmbedLogo(doc: any, logoUrl: string): Promise<any | null> {
+  if (!logoUrl) return null;
+  try {
+    const response = await fetch(logoUrl, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const type = detectImageType(bytes);
+    if (type === 'png') return doc.embedPng(bytes);
+    if (type === 'jpg') return doc.embedJpg(bytes);
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export async function createPdfContext(): Promise<PdfContext> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const branding = await getBrandSettings();
+  const logoImage = await tryEmbedLogo(doc, branding.logoUrl);
 
   return {
     doc,
@@ -31,6 +77,8 @@ export async function createPdfContext(): Promise<PdfContext> {
       muted: rgb(0.38, 0.38, 0.38),
       border: rgb(0.85, 0.85, 0.85),
     },
+    branding,
+    logoImage,
   };
 }
 
@@ -42,14 +90,31 @@ function safePdfText(value: string): string {
 }
 
 export function drawHeader(page: any, ctx: PdfContext, title: string, subtitle?: string) {
-  const { height } = page.getSize();
-  page.drawText('EduConnect CRM', {
+  const { height, width } = page.getSize();
+  const brandName = ctx.branding.name || 'EduConnect CRM';
+
+  page.drawText(safePdfText(brandName), {
     x: ctx.theme.margin,
     y: height - ctx.theme.margin,
     size: 16,
     font: ctx.fontBold,
     color: ctx.theme.black,
   });
+
+  if (ctx.logoImage) {
+    const maxWidth = 96;
+    const maxHeight = 34;
+    const scale = Math.min(maxWidth / ctx.logoImage.width, maxHeight / ctx.logoImage.height, 1);
+    const logoWidth = ctx.logoImage.width * scale;
+    const logoHeight = ctx.logoImage.height * scale;
+    page.drawImage(ctx.logoImage, {
+      x: width - ctx.theme.margin - logoWidth,
+      y: height - ctx.theme.margin - logoHeight + 4,
+      width: logoWidth,
+      height: logoHeight,
+    });
+  }
+
   page.drawText(safePdfText(title), {
     x: ctx.theme.margin,
     y: height - ctx.theme.margin - 20,
@@ -90,6 +155,17 @@ export function drawFooter(page: any, ctx: PdfContext, left: string, right?: str
     font: ctx.font,
     color: ctx.theme.muted,
   });
+
+  const contactParts = [ctx.branding.phone, ctx.branding.email, ctx.branding.address].filter(Boolean);
+  if (contactParts.length > 0) {
+    page.drawText(safePdfText(contactParts.join(' | ')), {
+      x: ctx.theme.margin,
+      y: ctx.theme.margin - 4,
+      size: 8,
+      font: ctx.font,
+      color: ctx.theme.muted,
+    });
+  }
 
   if (right) {
     page.drawText(safePdfText(right), {

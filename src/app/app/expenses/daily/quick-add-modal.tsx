@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ProofUploadField } from '@/components/uploads/proof-upload-field';
 import { addDailyExpenseAction } from '../actions';
 
 const categories = [
@@ -60,10 +61,7 @@ export function QuickAddExpenseModal() {
               ))}
             </select>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="proofUrl">Proof URL</Label>
-            <Input id="proofUrl" name="proofUrl" placeholder="https://..." />
-          </div>
+          <ProofUploadField id="expense-proof" inputName="proofUrl" label="Expense proof" />
           <Button type="submit">Save Expense</Button>
         </form>
       </DialogContent>

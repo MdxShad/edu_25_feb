@@ -28,3 +28,12 @@ test('staff permissions gate route access', () => {
   assert.equal(isRouteAllowed('/app/ledgers/university', user('STAFF', ['accountsView'])), true);
   assert.equal(isRouteAllowed('/app/reports', user('STAFF', ['admissionView'])), false);
 });
+
+
+test('leads inbox access follows internal role rules', () => {
+  assert.equal(isRouteAllowed('/app/leads', user('SUPER_ADMIN')), true);
+  assert.equal(isRouteAllowed('/app/leads', user('CONSULTANT')), true);
+  assert.equal(isRouteAllowed('/app/leads', user('STAFF', ['leadsView'])), true);
+  assert.equal(isRouteAllowed('/app/leads', user('STAFF', ['admissionView'])), false);
+  assert.equal(isRouteAllowed('/app/leads', user('AGENT')), false);
+});

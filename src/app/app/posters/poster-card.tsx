@@ -36,6 +36,7 @@ export function BrandedPosterCard(props: {
   promoterName: string;
   promoterMobile: string;
   consultancyName: string;
+  consultancyPhone?: string;
   refCode: string;
   siteUrl: string;
 }) {
@@ -94,7 +95,12 @@ export function BrandedPosterCard(props: {
         ctx.strokeRect(pad, pad, logoW, logoH);
         ctx.fillStyle = '#111827';
         ctx.font = `${Math.max(16, Math.round(canvas.width * 0.021))}px sans-serif`;
-        ctx.fillText(props.consultancyName, pad + 10, pad + logoH * 0.58);
+        ctx.fillText(props.consultancyName, pad + 10, pad + logoH * 0.48);
+        if (props.consultancyPhone) {
+          ctx.fillStyle = '#374151';
+          ctx.font = `${Math.max(11, Math.round(canvas.width * 0.014))}px sans-serif`;
+          ctx.fillText(`Ph: ${props.consultancyPhone}`, pad + 10, pad + logoH * 0.82);
+        }
 
         const qrSize = Math.round(canvas.width * 0.18);
         const qrX = canvas.width - qrSize - pad;

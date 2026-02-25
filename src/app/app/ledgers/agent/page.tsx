@@ -11,7 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { formatINR } from '@/lib/money';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ProofUploadField } from '@/components/uploads/proof-upload-field';
 import { addAgentPaymentAction } from '../actions';
+import { PaymentHistoryModal } from '../payment-history-modal';
 
 function scopeWhere(user: { id: string; role: Role; parentId: string | null }) {
   if (user.role === Role.SUPER_ADMIN) return {};
@@ -60,7 +62,7 @@ export default async function AgentLedgerPage({
     },
     include: {
       agent: true,
-      payouts: { orderBy: { paidAt: 'desc' }, take: 3 },
+      payouts: { orderBy: { paidAt: 'desc' } },
       admission: { include: { course: true, university: true } },
     },
     orderBy: { updatedAt: 'desc' },
@@ -212,7 +214,13 @@ export default async function AgentLedgerPage({
                               <option value="OTHER">Other</option>
                             </select>
                             <Input name="reference" placeholder="Reference" className="h-8" />
-                            <Input name="proofUrl" placeholder="Proof URL" className="h-8" />
+                            <ProofUploadField
+                              id={`${formId}-proof`}
+                              inputName="proofUrl"
+                              label="Proof"
+                              helpText="Upload receipt or screenshot"
+                              className="md:col-span-5"
+                            />
                             <Input name="notes" placeholder="Notes" className="h-8 md:col-span-4" />
                             <Button type="submit" size="sm" variant="secondary" className="h-8">
                               Add
@@ -222,8 +230,9 @@ export default async function AgentLedgerPage({
                           <span className="text-xs text-zinc-500">View only</span>
                         )}
                         {ledger.payouts.length > 0 ? (
-                          <div className="mt-1 text-xs text-zinc-500">
-                            Latest: {ledger.payouts[0].amount} on{' '}
+                          <>
+                            <div className="mt-1 text-xs text-zinc-500">
+                            Latest: {formatINR(ledger.payouts[0].amount)} on{' '}
                             {new Date(ledger.payouts[0].paidAt).toLocaleDateString()}{' '}
                             <a
                               className="underline"
@@ -233,7 +242,35 @@ export default async function AgentLedgerPage({
                             >
                               PDF
                             </a>
+                            {ledger.payouts[0].proofUrl ? (
+                              <>
+                                {' '}•{' '}
+                                <a
+                                  className="underline"
+                                  href={ledger.payouts[0].proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Proof
+                                </a>
+                              </>
+                            ) : null}
                           </div>
+                          <PaymentHistoryModal
+                            title={`Agent payouts • ${ledger.agent.name}`}
+                            description={`All payout entries for ${ledger.admission.studentName}`}
+                            entries={ledger.payouts.map((payout) => ({
+                              id: payout.id,
+                              amount: payout.amount,
+                              paidAtIso: payout.paidAt.toISOString(),
+                              method: payout.method,
+                              reference: payout.reference,
+                              notes: payout.notes,
+                              proofUrl: payout.proofUrl,
+                              slipUrl: `/api/ledgers/agents/${payout.id}/slip`,
+                            }))}
+                          />
+                          </>
                         ) : null}
                       </TD>
                     </TR>

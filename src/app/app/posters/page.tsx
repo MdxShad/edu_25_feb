@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { canAccess } from '@/lib/roles';
 import { siteConfig } from '@/lib/site';
+import { getBrandSettings } from '@/lib/branding';
 import { PosterAdminManager } from './admin-manager';
 import { BrandedPosterCard } from './poster-card';
 
@@ -11,7 +12,7 @@ function canViewPosters(user: { role: Role; permissions: unknown | null }) {
     user.role === Role.SUPER_ADMIN ||
     user.role === Role.CONSULTANT ||
     user.role === Role.AGENT ||
-    (user.role === Role.STAFF && canAccess(user, 'reportsView'))
+    (user.role === Role.STAFF && canAccess(user, 'postersManage'))
   );
 }
 
@@ -29,7 +30,7 @@ export default async function PostersPage({
     );
   }
 
-  const [universities, courses, me] = await Promise.all([
+  const [universities, courses, me, brand] = await Promise.all([
     prisma.university.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     prisma.course.findMany({
       orderBy: { name: 'asc' },
@@ -46,6 +47,7 @@ export default async function PostersPage({
         parent: { select: { name: true } },
       },
     }),
+    getBrandSettings(),
   ]);
 
   if (!me) return null;
@@ -62,7 +64,8 @@ export default async function PostersPage({
     orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
   });
 
-  const consultancyName = me.role === Role.AGENT ? me.parent?.name || 'EduConnect' : me.name;
+  const fallbackName = me.role === Role.AGENT ? me.parent?.name || 'EduConnect' : me.name;
+  const consultancyName = brand.name || fallbackName;
   const promoterMobile = me.mobile || '';
   const promoterName = me.name;
 
@@ -139,6 +142,7 @@ export default async function PostersPage({
               consultancyName={consultancyName}
               refCode={me.userId}
               siteUrl={siteConfig.url}
+              consultancyPhone={brand.phone}
             />
           ))
         )}

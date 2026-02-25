@@ -1,5 +1,17 @@
 import { z } from 'zod';
-import { AdmissionSource, CommissionType, ExpenseCategory, PaymentMethod } from '@prisma/client';
+import { AdmissionSource, CommissionType, ExpenseCategory, LeadStatus, PaymentMethod } from '@prisma/client';
+
+
+const phoneRegex = /^\+?[0-9][0-9\s-]{7,14}$/;
+
+const phoneSchema = z
+  .string()
+  .trim()
+  .min(8, 'Mobile number is too short.')
+  .max(20, 'Mobile number is too long.')
+  .regex(phoneRegex, 'Enter a valid mobile number.');
+
+const optionalPhoneSchema = z.union([z.literal(''), phoneSchema]).optional();
 
 export const loginSchema = z.object({
   userId: z.string().min(2).max(50),
@@ -48,7 +60,7 @@ export const createAgentSchema = z.object({
   userId: z.string().min(2).max(50),
   password: z.string().min(4).max(100),
   name: z.string().min(2).max(200),
-  mobile: z.string().max(50).optional().or(z.literal('')),
+  mobile: optionalPhoneSchema,
   email: z.string().email().optional().or(z.literal('')),
   address: z.string().max(500).optional().or(z.literal('')),
   idProofUrl: z.string().url().optional().or(z.literal('')),
@@ -85,8 +97,8 @@ export const createAdmissionSchema = z.object({
   // Step 1
   studentName: z.string().min(2).max(200),
   fatherName: z.string().max(200).optional().or(z.literal('')),
-  mobile: z.string().min(5).max(50),
-  altMobile: z.string().max(50).optional().or(z.literal('')),
+  mobile: phoneSchema,
+  altMobile: optionalPhoneSchema,
   address: z.string().max(500).optional().or(z.literal('')),
   dob: z.string().optional().or(z.literal('')),
   gender: z.string().max(50).optional().or(z.literal('')),
@@ -113,8 +125,8 @@ export const createAdmissionSchema = z.object({
 
 export const updateAdmissionContactSchema = z.object({
   admissionId: z.string().min(1),
-  mobile: z.string().min(5).max(50),
-  altMobile: z.string().max(50).optional().or(z.literal('')),
+  mobile: phoneSchema,
+  altMobile: optionalPhoneSchema,
   address: z.string().max(500).optional().or(z.literal('')),
 });
 
@@ -124,6 +136,9 @@ export const dailyExpenseSchema = z.object({
   amount: z.coerce.number().int().nonnegative(),
   date: z.string().optional().or(z.literal('')),
   proofUrl: z.string().url().optional().or(z.literal('')),
+  proofFileName: z.string().max(260).optional().or(z.literal('')),
+  proofMimeType: z.string().max(120).optional().or(z.literal('')),
+  proofSizeBytes: z.coerce.number().int().nonnegative().optional(),
   proofFile: uploadedFileSchema.optional(),
 });
 
@@ -133,6 +148,9 @@ export const ledgerPaymentSchema = z.object({
   method: z.nativeEnum(PaymentMethod),
   reference: z.string().max(120).optional().or(z.literal('')),
   proofUrl: z.string().url().optional().or(z.literal('')),
+  proofFileName: z.string().max(260).optional().or(z.literal('')),
+  proofMimeType: z.string().max(120).optional().or(z.literal('')),
+  proofSizeBytes: z.coerce.number().int().nonnegative().optional(),
   notes: z.string().max(500).optional().or(z.literal('')),
 });
 
@@ -162,6 +180,23 @@ export const aiReminderSchema = z.object({
 
 export const aiPosterCaptionSchema = z.object({
   topic: z.string().min(3).max(160),
+});
+
+
+export const studentPaymentSchema = z.object({
+  amount: z.coerce.number().int().positive(),
+  paidAt: z.string().optional().or(z.literal('')),
+  method: z.nativeEnum(PaymentMethod),
+  reference: z.string().max(120).optional().or(z.literal('')),
+  proofUrl: z.string().url().optional().or(z.literal('')),
+  notes: z.string().max(500).optional().or(z.literal('')),
+});
+
+export const updateLeadSchema = z.object({
+  leadId: z.string().min(1),
+  status: z.nativeEnum(LeadStatus),
+  assignedToId: z.string().optional().or(z.literal('')),
+  internalNotes: z.string().max(2000).optional().or(z.literal('')),
 });
 
 export const contactLeadSchema = z.object({

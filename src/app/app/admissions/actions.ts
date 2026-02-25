@@ -17,6 +17,14 @@ import { revalidatePath } from 'next/cache';
 import { logAuditEvent } from '@/lib/audit';
 import { canAccess } from '@/lib/roles';
 import { invalidateFinancialCaches } from '@/lib/cache-invalidation';
+import { assertOpenPeriod } from '@/lib/month-close';
+import { studentPaymentSchema } from '@/lib/validation';
+
+
+function normalizePhone(value: string): string {
+  return value.replace(/[^\d+]/g, '');
+}
+
 
 export async function createAdmissionAction(payload: unknown): Promise<{ id: string }> {
   const user = await requireUser();
@@ -40,6 +48,27 @@ export async function createAdmissionAction(payload: unknown): Promise<{ id: str
 
   const data = parsed.data;
 
+  const now = new Date();
+  await assertOpenPeriod(now, user.role === Role.SUPER_ADMIN);
+
+  const duplicate = await prisma.admission.findFirst({
+    where: {
+      mobile: normalizePhone(data.mobile),
+      createdAt: { gte: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000) },
+    },
+    select: { id: true, studentName: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (duplicate) {
+    await logAuditEvent({
+      actorId: user.id,
+      action: 'ADMISSION_DUPLICATE_WARNING',
+      entityType: 'Admission',
+      success: true,
+      metadata: { duplicateAdmissionId: duplicate.id, mobile: normalizePhone(data.mobile), incomingName: data.studentName },
+    });
+  }
+
   // Resolve consultant scope
   let consultantId: string;
   if (user.role === Role.CONSULTANT) {
@@ -60,6 +89,20 @@ export async function createAdmissionAction(payload: unknown): Promise<{ id: str
   if (!course) throw new Error('Course not found');
   if (course.universityId !== data.universityId)
     throw new Error('Course does not belong to the selected university');
+
+  if (data.amountReceived > course.displayFee && user.role !== Role.SUPER_ADMIN) {
+    throw new Error('Amount received cannot exceed display fee. Contact Super Admin for override.');
+  }
+
+  if (data.amountReceived > course.displayFee && user.role === Role.SUPER_ADMIN) {
+    await logAuditEvent({
+      actorId: user.id,
+      action: 'ADMISSION_FEE_OVERRIDE',
+      entityType: 'Admission',
+      success: true,
+      metadata: { amountReceived: data.amountReceived, displayFee: course.displayFee, courseId: course.id },
+    });
+  }
 
   let agentId: string | null = null;
   let agentCommissionType: CommissionType | null = null;
@@ -122,8 +165,8 @@ export async function createAdmissionAction(payload: unknown): Promise<{ id: str
 
         studentName: data.studentName,
         fatherName: data.fatherName || null,
-        mobile: data.mobile,
-        altMobile: data.altMobile || null,
+        mobile: normalizePhone(data.mobile),
+        altMobile: data.altMobile ? normalizePhone(data.altMobile) : null,
         address: data.address || null,
         dob: normalizedDob,
         gender: data.gender || null,
@@ -148,6 +191,17 @@ export async function createAdmissionAction(payload: unknown): Promise<{ id: str
         agentExpensesTotal,
         consultancyExpensesTotal,
         netProfit: fin.netProfit,
+      },
+    });
+
+    await tx.studentPayment.create({
+      data: {
+        admissionId: created.id,
+        amount: created.amountReceived,
+        paidAt: created.submittedAt ?? new Date(),
+        method: 'OTHER',
+        notes: 'Initial payment at admission submission',
+        createdById: user.id,
       },
     });
 
@@ -339,6 +393,9 @@ export async function updateAdmissionContactAction(payload: unknown): Promise<vo
   if (!parsed.success) throw new Error('Invalid update payload');
   const data = parsed.data;
 
+  await assertOpenPeriod(new Date(), user.role === Role.SUPER_ADMIN);
+
+
   const admission = await prisma.admission.findUnique({
     where: { id: data.admissionId },
     select: {
@@ -361,8 +418,8 @@ export async function updateAdmissionContactAction(payload: unknown): Promise<vo
   await prisma.admission.update({
     where: { id: admission.id },
     data: {
-      mobile: data.mobile,
-      altMobile: data.altMobile || null,
+      mobile: normalizePhone(data.mobile),
+      altMobile: data.altMobile ? normalizePhone(data.altMobile) : null,
       address: data.address || null,
     },
   });
@@ -379,8 +436,8 @@ export async function updateAdmissionContactAction(payload: unknown): Promise<vo
           address: admission.address,
         },
         after: {
-          mobile: data.mobile,
-          altMobile: data.altMobile || null,
+          mobile: normalizePhone(data.mobile),
+          altMobile: data.altMobile ? normalizePhone(data.altMobile) : null,
           address: data.address || null,
         },
       },
@@ -397,6 +454,70 @@ export async function updateAdmissionContactAction(payload: unknown): Promise<vo
 
   revalidatePath(`/app/admissions/${admission.id}`);
   revalidatePath('/app/admissions');
+}
+
+
+export async function collectStudentPaymentAction(admissionId: string, formData: FormData): Promise<void> {
+  const user = await requireUser();
+  if (user.role === Role.AGENT) throw new Error('Not allowed');
+  if (user.role === Role.STAFF && !canAccess(user, 'paymentsAdd')) throw new Error('Not allowed');
+
+  const parsed = studentPaymentSchema.safeParse({
+    amount: formData.get('amount'),
+    paidAt: formData.get('paidAt'),
+    method: formData.get('method'),
+    reference: formData.get('reference'),
+    proofUrl: formData.get('proofUrl'),
+    notes: formData.get('notes'),
+  });
+  if (!parsed.success) throw new Error('Invalid payment payload');
+  const data = parsed.data;
+  const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
+  await assertOpenPeriod(paidAt, user.role === Role.SUPER_ADMIN);
+
+  const admission = await prisma.admission.findUnique({ where: { id: admissionId } });
+  if (!admission) throw new Error('Admission not found');
+
+  const allowed =
+    user.role === Role.SUPER_ADMIN ||
+    (user.role === Role.CONSULTANT && admission.consultantId === user.id) ||
+    (user.role === Role.STAFF && admission.consultantId === (user.parentId ?? '__NONE__'));
+  if (!allowed) throw new Error('Not allowed');
+
+  await prisma.studentPayment.create({
+    data: {
+      admissionId,
+      amount: data.amount,
+      paidAt,
+      method: data.method,
+      reference: data.reference || null,
+      proofUrl: data.proofUrl || null,
+      notes: data.notes || null,
+      createdById: user.id,
+    },
+  });
+
+  await prisma.admissionChange.create({
+    data: {
+      admissionId,
+      actorId: user.id,
+      action: 'STUDENT_PAYMENT_ADDED',
+      details: { amount: data.amount, paidAt: paidAt.toISOString(), method: data.method, reference: data.reference || null },
+    },
+  });
+
+  await logAuditEvent({
+    actorId: user.id,
+    action: 'STUDENT_PAYMENT_CREATED',
+    entityType: 'Admission',
+    entityId: admissionId,
+    metadata: { amount: data.amount, paidAt: paidAt.toISOString(), method: data.method },
+  });
+
+  revalidatePath(`/app/admissions/${admissionId}`);
+  revalidatePath('/app/admissions');
+  revalidatePath('/app');
+  invalidateFinancialCaches();
 }
 
 export async function deleteAdmissionAction(admissionId: string): Promise<void> {

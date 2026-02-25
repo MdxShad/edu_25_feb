@@ -80,19 +80,42 @@ export async function submitContactLeadAction(
     };
   }
 
-  await prisma.lead.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email.toLowerCase(),
-      phone: parsed.data.phone || null,
-      company: parsed.data.company || null,
-      message: parsed.data.message,
-      source: parsed.data.source || 'marketing-contact-form',
-      pageUrl: parsed.data.pageUrl || null,
-      ipHash,
-      userAgent: headerStore.get('user-agent') || null,
+  const existingLead = await prisma.lead.findFirst({
+    where: {
+      createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      OR: [
+        { email: parsed.data.email.toLowerCase() },
+        ...(parsed.data.phone ? [{ phone: parsed.data.phone }] : []),
+      ],
     },
+    select: { id: true },
   });
+
+  if (!existingLead) {
+    await prisma.lead.create({
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email.toLowerCase(),
+        phone: parsed.data.phone || null,
+        company: parsed.data.company || null,
+        message: parsed.data.message,
+        source: parsed.data.source || 'marketing-contact-form',
+        pageUrl: parsed.data.pageUrl || null,
+        ipHash,
+        userAgent: headerStore.get('user-agent') || null,
+      },
+    });
+  } else {
+    await logAuditEvent({
+      action: 'CONTACT_FORM_DUPLICATE_SKIPPED',
+      success: true,
+      entityType: 'Lead',
+      entityId: existingLead.id,
+      metadata: { email: parsed.data.email.toLowerCase() },
+      ipHash,
+      userAgent: headerStore.get('user-agent'),
+    });
+  }
 
   await logAuditEvent({
     action: 'CONTACT_FORM_SUBMITTED',

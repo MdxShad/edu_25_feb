@@ -57,7 +57,7 @@ export function canAccessPosters(user: RbacUser): boolean {
     user.role === 'SUPER_ADMIN' ||
     user.role === 'CONSULTANT' ||
     user.role === 'AGENT' ||
-    hasStaffPermission(user, 'reportsView')
+    hasStaffPermission(user, 'postersManage')
   );
 }
 
@@ -77,6 +77,8 @@ export function isRouteAllowed(pathname: string, user: RbacUser): boolean {
 
   if (pathname.startsWith('/app/expenses')) return canAccessExpenses(user);
   if (pathname.startsWith('/app/reports')) return canAccessReports(user);
+  if (pathname.startsWith('/app/leads'))
+    return user.role === 'SUPER_ADMIN' || user.role === 'CONSULTANT' || hasStaffPermission(user, 'leadsView');
   if (pathname.startsWith('/app/posters')) return canAccessPosters(user);
   if (pathname.startsWith('/app/ai')) return canAccessReports(user);
 

@@ -28,7 +28,17 @@ export default async function AdmissionPrintPage({ params }: { params: { id: str
     <main className="mx-auto max-w-3xl space-y-4 p-6 print:p-0">
       <div className="flex items-center justify-between print:hidden">
         <h1 className="text-xl font-semibold">Printable Admission</h1>
-        <div className="text-sm text-zinc-600">Use browser print to export this page.</div>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/admissions/${admission.id}/slip`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+          >
+            Print Admission Slip (PDF)
+          </a>
+          <div className="text-sm text-zinc-600">Use browser print to export this page.</div>
+        </div>
       </div>
 
       <section className="rounded border border-zinc-200 p-4">
